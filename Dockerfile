@@ -1,7 +1,6 @@
 # 多阶段构建：第一阶段 - 构建阶段
-# 使用 golang:1.21-alpine 作为基础镜像，命名为 builder
-FROM golang:1.21-alpine AS builder
-
+# 使用 1Panel 镜像源的 golang 镜像
+FROM docker.1panel.live/library/golang:1.21-alpine AS builder
 # 设置容器内的工作目录
 WORKDIR /app
 # 将当前目录下的所有文件复制到容器的工作目录
@@ -10,8 +9,8 @@ COPY . .
 RUN go build -o jwt-server
 
 # 多阶段构建：第二阶段 - 运行阶段
-# 使用轻量级的 alpine 作为基础镜像
-FROM alpine:latest
+# 使用 1Panel 镜像源的 alpine 镜像
+FROM docker.1panel.live/library/alpine:latest
 # 设置容器的工作目录
 WORKDIR /app
 # 从 builder 阶段复制编译好的可执行文件到当前阶段
