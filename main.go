@@ -19,15 +19,11 @@ import (
 )
 
 // 读取私钥文件
-// 修复重复声明问题，确保函数只声明一次
 func readPrivateKey(keyPath string) ([]byte, error) {
-	// 使用 os.ReadFile 替代已弃用的 ioutil.ReadFile
 	keyData, err := os.ReadFile(keyPath)
-
 	if err != nil {
 		return nil, err
 	}
-
 	return keyData, nil
 }
 
@@ -43,20 +39,16 @@ func generateRandomString(length int) string {
 }
 
 // 生成 JWT
-// 修复逗号缺失问题
 func generateJWT(iss, kid string, privateKey []byte) (string, error) {
 	// 解析PEM格式的私钥
 	block, _ := pem.Decode(privateKey)
 	if block == nil {
 		return "", fmt.Errorf("failed to decode PEM block containing private key")
 	}
-
 	parsedKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-
 	if err != nil {
 		return "", fmt.Errorf("failed to parse private key: %v", err)
 	}
-
 	// Header
 	header := map[string]interface{}{
 		"alg": "RS256",
@@ -68,10 +60,8 @@ func generateJWT(iss, kid string, privateKey []byte) (string, error) {
 		return "", err
 	}
 	encodedHeader := base64.RawURLEncoding.EncodeToString(headerJSON)
-
 	// Payload
 	now := time.Now().Unix()
-	// 修改部分：将过期时间设置为当前时间（iat）加 15 分钟
 	exp := now + 15*60
 	jti := generateRandomString(32)
 	payload := map[string]interface{}{
@@ -86,14 +76,11 @@ func generateJWT(iss, kid string, privateKey []byte) (string, error) {
 		return "", err
 	}
 	encodedPayload := base64.RawURLEncoding.EncodeToString(payloadJSON)
-
 	// Signature
 	unsignedToken := fmt.Sprintf("%s.%s", encodedHeader, encodedPayload)
 	h := sha256.New()
 	h.Write([]byte(unsignedToken))
 	hashed := h.Sum(nil)
-	// 将 sha256.Hash 替换为 crypto.SHA256
-	// 进行类型断言，将 parsedKey 转换为 *rsa.PrivateKey 类型
 	rsaPrivateKey, ok := parsedKey.(*rsa.PrivateKey)
 	if !ok {
 		return "", fmt.Errorf("parsed key is not an RSA private key")
@@ -160,40 +147,55 @@ func getAccessToken(jwtToken string) (string, error) {
 	return accessToken, nil
 }
 
-func main() {
-	// 从环境变量中获取私钥文件路径、OAuth 应用 ID 和公钥指纹
-	// 获取当前 main.go 文件所在目录
+// 新增处理 token 请求的处理器
+func handleGetToken(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "仅支持 GET 请求", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 获取当前目录
 	dir, _ := os.Getwd()
-	// 拼接 pem 文件路径
 	privateKeyPath := filepath.Join(dir, "private_key.pem")
 	iss := "1130835961702"
 	kid := "-Y2SZ6HJ7DzLisDjJE37GxOy1KfDIjbOaOPWF_-dccU"
 
-	if privateKeyPath == "" || iss == "" || kid == "" {
-		fmt.Println("Please set PRIVATE_KEY_PATH, OAUTH_APP_ID and PUBLIC_KEY_FINGERPRINT environment variables.")
-		return
-	}
-
 	// 读取私钥
 	privateKey, err := readPrivateKey(privateKeyPath)
 	if err != nil {
-		fmt.Println("Error reading private key:", err)
+		http.Error(w, "读取私钥失败: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// 生成 JWT
 	jwtToken, err := generateJWT(iss, kid, privateKey)
 	if err != nil {
-		fmt.Println("Error generating JWT:", err)
+		http.Error(w, "生成 JWT 失败: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// 获取访问令牌
 	accessToken, err := getAccessToken(jwtToken)
 	if err != nil {
-		fmt.Println("Error getting access token:", err)
+		http.Error(w, "获取访问令牌失败: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	fmt.Println("Access Token:", accessToken)
+	// 返回 JSON 响应
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"access_token": accessToken,
+	})
+}
+
+func main() {
+	// 注册路由
+	http.HandleFunc("/getToken", handleGetToken)
+
+	// 启动服务器
+	port := ":8080"
+	fmt.Printf("服务器启动在 http://localhost%s\n", port)
+	if err := http.ListenAndServe(port, nil); err != nil {
+		fmt.Printf("服务器启动失败: %v\n", err)
+	}
 }
